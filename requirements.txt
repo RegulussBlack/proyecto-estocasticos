@@ -1,3 +1,3 @@
 streamlit
-streamlit-pianoroll
+streamlit-pianoroll==0.7.4
 numpy
