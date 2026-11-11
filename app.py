@@ -4,9 +4,10 @@ import pandas as pd
 import altair as alt
 import streamlit as st
 
-from core import audio, markov as mk, mineria as mn
+from core import audio, markov as mk, teoria as te
 from core.corpus import CORPUS
-from core.notas import (NOMBRES, NOTAS_ORDENADAS, nombre_a_midi, parsear_secuencia, clave_orden)
+from core.notas import (NOMBRES, NOTAS_ORDENADAS, nombre_a_midi, midi_a_nombre, midi_a_freq,
+                        parsear_secuencia, clave_orden)
 
 st.set_page_config(page_title="Compositor Markov", page_icon="🎹", layout="wide")
 
@@ -53,14 +54,14 @@ def cargar_pieza():
 
 
 # ============================================================ GRÁFICOS
-def heatmap(df, x_title, y_title, scheme="viridis", fmt=".2f", texto=True, altura=None):
+def heatmap(df, x_title, y_title, scheme="viridis", fmt=".2f", texto=True, altura=None, invertir=False):
     largo = df.stack().rename("valor").reset_index()
     largo.columns = ["y", "x", "valor"]
     base = alt.Chart(largo).encode(
         x=alt.X("x:O", sort=list(df.columns), title=x_title),
         y=alt.Y("y:O", sort=list(df.index), title=y_title))
     capa = base.mark_rect().encode(
-        color=alt.Color("valor:Q", scale=alt.Scale(scheme=scheme), title=None),
+        color=alt.Color("valor:Q", scale=alt.Scale(scheme=scheme, reverse=invertir), title=None),
         tooltip=["y", "x", alt.Tooltip("valor:Q", format=fmt)])
     if texto:
         umbral = (largo["valor"].max() + largo["valor"].min()) / 2
@@ -130,11 +131,11 @@ VOCAB = sorted({t for s in SECS_TOK for t in s}, key=clave_orden)
 # ============================================================ CABECERA
 st.title("🎹 Compositor Estocástico con Cadenas de Markov")
 st.caption("Un proyecto de Ciencia de Datos e IA: modelado probabilístico de secuencias, síntesis de audio, "
-           "minería de datos musical y evaluación con métricas de ML.")
+           "armonía, teoría musical y evaluación con métricas de ML.")
 
-tabs = st.tabs(["🏠 Proyecto", "📚 Teoría", "🎹 Piano", "🎼 Generación",
-                "📊 Análisis de la cadena", "🔬 Minería de datos", "🧪 Evaluación"])
-t_proy, t_teo, t_piano, t_gen, t_ana, t_min, t_eval = tabs
+tabs = st.tabs(["🏠 Proyecto", "📚 Teoría Markov", "🎵 Teoría musical", "🎹 Piano",
+                "🎼 Melodías", "🎶 Armonía", "📊 Análisis", "🧪 Evaluación"])
+t_proy, t_teo, t_music, t_piano, t_gen, t_arm, t_ana, t_eval = tabs
 
 # ============================================================ 1. PROYECTO
 with t_proy:
@@ -152,7 +153,8 @@ aleatoria que depende de las notas anteriores. Se estima la dependencia contando
 - Dos representaciones: **notas** e **intervalos** (invariante a la transposición).
 - Control creativo: **temperatura**, **top-k** y restricción a una **tonalidad** detectada automáticamente.
 - **Análisis formal** de la cadena: distribución estacionaria, tasa de entropía, tiempo de mezcla.
-- **Minería de datos**: extracción de características, PCA, K-Means y similitud entre piezas.
+- **Teoría musical aplicada**: escalas, intervalos, acordes y tonalidad detectada automáticamente.
+- **Armonía**: una segunda cadena de Markov sobre **progresiones de acordes** (I–V–vi–IV, blues, jazz…).
 - **Evaluación rigurosa**: perplejidad y accuracy top-k con partición temporal y *leave-one-piece-out*.
 - Exportación a **WAV** y **MIDI**.
 """)
@@ -162,15 +164,15 @@ digraph G { rankdir=LR; node [shape=box, style="rounded,filled", fillcolor="#eef
   A [label="Corpus +\\nnotas del usuario"]; B [label="Tokenización\\n(notas / intervalos)"];
   C [label="Estimación\\nP(w | contexto)\\n+ suavizado"]; D [label="Muestreo\\n(temperatura, top-k,\\ntonalidad)"];
   E [label="Síntesis\\nWAV / MIDI"]; F [label="Evaluación\\nperplejidad, top-k"];
-  G [label="Minería:\\nPCA, K-Means,\\ntonalidad"];
+  G [label="Teoría musical:\\ntonalidad, escalas,\\nacordes"];
   A -> B -> C -> D -> E; C -> F; A -> G; }
 """)
     st.subheader("Cómo usarlo")
     st.markdown("""
 1. En la barra lateral elige las **piezas del corpus** y el **orden** del modelo.
-2. En **🎹 Piano** toca tu propia melodía (o pega una secuencia / carga una pieza).
-3. En **🎼 Generación** crea una melodía nueva, escúchala y descárgala.
-4. En **📊 Análisis** y **🔬 Minería** inspecciona qué aprendió el modelo.
+2. En **🎵 Teoría musical** repasa escalas, intervalos y acordes (con ejemplos sonoros).
+3. En **🎹 Piano** toca tu propia melodía; en **🎼 Melodías** genera una nueva y descárgala.
+4. En **🎶 Armonía** genera progresiones de acordes; en **📊 Análisis** inspecciona qué aprendió la cadena.
 5. En **🧪 Evaluación** compara órdenes y valores de α con métricas objetivas.
 """)
     c1, c2, c3 = st.columns(3)
@@ -256,16 +258,141 @@ La **perplejidad** mide qué tan "sorprendido" está el modelo ante datos no vis
         st.markdown(r"""
 Se interpreta como el **número efectivo de opciones** entre las que duda el modelo. Un modelo aleatorio uniforme
 tiene $PP=|S|$. También se reporta la **accuracy top-1 / top-3**: ¿la nota real estaba entre las 1 o 3 más probables?""")
-    with st.expander("8️⃣ Minería de datos musical"):
+    with st.expander("8️⃣ Markov aplicado a la armonía"):
         st.markdown(r"""
-- **Detección de tonalidad (Krumhansl–Schmuckler):** se correlaciona el histograma de clases de altura de la
-  pieza con los 24 perfiles de tonalidad (12 mayores y 12 menores) y se elige la de mayor correlación de Pearson.
-  Limitación: puede confundir una tonalidad con su relativa (p. ej. Do mayor / La menor).
-- **Ingeniería de características:** histograma de grados relativos a la tónica, histograma de intervalos, entropía
-  de alturas, proporción de grados conjuntos y saltos, ámbito. Son rasgos **invariantes a la transposición**.
-- **PCA:** proyecta los rasgos estandarizados a 2 dimensiones maximizando la varianza explicada.
-- **K-Means** agrupa piezas similares; la **silueta** ($-1$ a $1$) mide la calidad de los clústeres.
-- **Similitud coseno** entre vectores de rasgos para encontrar "a qué pieza se parece tu melodía".""")
+Los acordes también forman secuencias con dependencia local: en la **armonía funcional** cada acorde tiende a
+resolver en otro (el dominante $V$ "quiere" ir a la tónica $I$). Si usamos como estados los **grados** de la
+tonalidad (I, ii, iii, IV, V, vi, vii°), la matriz de transición **aprende esas tendencias** a partir de ejemplos
+(pop, blues, jazz, clásica) y la cadena genera progresiones nuevas que suenan "correctas". Como los grados son
+relativos a la tónica, la misma progresión se puede transportar a cualquier tonalidad.""")
+
+# ============================================================ 3. TEORÍA MUSICAL
+with t_music:
+    st.header("Teoría musical esencial")
+    st.write("Lo necesario para entender **qué está modelando** la cadena de Markov. "
+             "Las secciones con 🔊 se pueden escuchar.")
+
+    with st.expander("1️⃣ Sonido, altura y frecuencia", expanded=True):
+        st.markdown(r"""
+Un sonido musical es una vibración periódica; su **altura** (grave ↔ agudo) depende de la **frecuencia** $f$ en
+hercios (Hz). La referencia universal es **La4 = 440 Hz**. Subir una **octava** duplica la frecuencia
+(La5 = 880 Hz) y las notas con el mismo nombre en distintas octavas se perciben como "la misma nota".
+
+En la música occidental la octava se divide en **12 semitonos iguales** (*temperamento igual*), de modo que cada
+semitono multiplica la frecuencia por $2^{1/12}\approx 1.0595$. Numerando las notas con el estándar **MIDI**
+(Do4 = 60, La4 = 69):""")
+        st.latex(r"f(m)=440\cdot 2^{(m-69)/12}")
+        st.markdown("""
+Las 12 clases de altura son: **Do, Do♯, Re, Re♯, Mi, Fa, Fa♯, Sol, Sol♯, La, La♯, Si**. Las teclas blancas son las
+7 notas naturales; las negras son las alteraciones (♯ sube un semitono, ♭ lo baja; Do♯ y Re♭ suenan igual: **enarmonía**).""")
+        tabla = pd.DataFrame({"Nota": [f"{n}4" for n in NOMBRES],
+                              "MIDI": [60 + i for i in range(12)],
+                              "Frecuencia (Hz)": [round(midi_a_freq(60 + i), 2) for i in range(12)]}).set_index("Nota")
+        st.dataframe(tabla)
+
+    with st.expander("2️⃣ Intervalos: la distancia entre notas"):
+        st.markdown(r"""
+Un **intervalo** mide la distancia entre dos notas, en **semitonos**. Cada intervalo tiene un nombre y un carácter
+(consonante o disonante). En **entonación justa** los intervalos más consonantes corresponden a razones de números
+enteros pequeños (la quinta justa es 3:2); el temperamento igual las aproxima con $2^{s/12}$.
+
+Esto es clave para el proyecto: el modelo por **intervalos** aprende justamente estas distancias, y por eso una
+melodía transportada a otra tonalidad "suena igual" para el modelo.""")
+        tabla = pd.DataFrame([{"Semitonos": s_, "Intervalo": n, "Razón justa": r, "Razón temperada": round(2 ** (s_ / 12), 4),
+                               "Carácter": c} for s_, n, r, c in te.INTERVALOS]).set_index("Semitonos")
+        st.dataframe(tabla)
+        c1, c2 = st.columns([1, 2])
+        sem = c1.slider("🔊 Escuchar un intervalo (semitonos)", 0, 12, 7, key="iv_sem")
+        nombre_iv = te.INTERVALOS[sem][1]
+        base_m = 60
+        par = [midi_a_nombre(base_m), midi_a_nombre(base_m + sem)]
+        c2.write(f"**{nombre_iv}**: {par[0]} → {par[1]}  ·  {te.INTERVALOS[sem][3]}")
+        if c2.button("▶️ Melódico (una nota tras otra)", key="iv_mel"):
+            st.audio(audio.sintetizar(par, 90), format="audio/wav", autoplay=True)
+        if c2.button("▶️ Armónico (a la vez)", key="iv_arm"):
+            st.audio(audio.sintetizar_acordes([[base_m, base_m + sem]], 60, 3), format="audio/wav", autoplay=True)
+
+    with st.expander("3️⃣ Escalas y modos"):
+        st.markdown(r"""
+Una **escala** es un subconjunto ordenado de notas que define el "vocabulario" de una pieza. Se describe por su
+patrón de **tonos (T = 2 semitonos)** y **semitonos (S = 1)**:
+
+| Escala | Patrón | Carácter |
+|---|---|---|
+| **Mayor** | T T S T T T S | brillante, estable |
+| **Menor natural** | T S T T S T T | oscuro, melancólico |
+| **Menor armónica** | T S T T S 1½ S | tensión "exótica" (sensible elevada) |
+| **Pentatónica** | 5 notas, sin semitonos | muy consonante; rock, folk, blues |
+| **Blues** | pentatónica menor + ♭5 | la "blue note" |
+
+Los **modos** (dórico, mixolidio…) son rotaciones de la escala mayor. La **tónica** es la nota "de reposo" a la que
+la melodía tiende a volver. Esa **gravedad tonal** es justo lo que la cadena de Markov captura estadísticamente:
+tras la sensible (nota 7) es muy probable la tónica.""")
+
+    with st.expander("4️⃣ Tonalidad, armadura y círculo de quintas"):
+        st.markdown("""
+Una **tonalidad** es la combinación de una tónica y una escala (p. ej. *Do mayor*, *La menor*). Cada tonalidad mayor
+comparte las mismas notas con su **relativa menor** (3 semitonos por debajo). La **armadura** indica cuántos ♯ o ♭
+lleva la tonalidad. Al ordenar las tonalidades de **quinta en quinta** se forma el **círculo de quintas**: las
+tonalidades vecinas comparten casi todas las notas, por eso modulan con facilidad.""")
+        st.dataframe(pd.DataFrame(te.CIRCULO_QUINTAS, columns=["Mayor", "Relativa menor", "Armadura"]).set_index("Mayor"))
+        st.markdown("""
+**Detección automática (Krumhansl–Schmuckler).** En el proyecto, la tonalidad de una melodía se estima
+correlacionando su histograma de notas con *perfiles psicológicos* de las 24 tonalidades (los perfiles
+Krumhansl–Kessler, obtenidos con experimentos de oyentes). Se usa para restringir la generación a notas de la escala.
+Puede confundir una tonalidad con su relativa porque comparten las mismas notas.""")
+
+    with st.expander("5️⃣ Grados, funciones tonales y acordes"):
+        st.markdown(r"""
+Cada nota de la escala es un **grado** (I a VII). Sobre cada grado se construye una **tríada** (acorde de 3 notas)
+apilando terceras **dentro de la escala**. En una tonalidad mayor resultan:
+mayor (I, IV, V), menor (ii, iii, vi) y disminuido (vii°). Convención: **mayúscula = acorde mayor**, minúscula = menor,
+° = disminuido.
+
+| Calidad | Estructura (semitonos) | Sonido |
+|---|---|---|
+| Mayor | 0 – 4 – 7 | alegre, estable |
+| Menor | 0 – 3 – 7 | triste, suave |
+| Disminuido | 0 – 3 – 6 | tenso, inestable |
+| Aumentado | 0 – 4 – 8 | misterioso, suspendido |
+
+**Funciones tonales** (armonía funcional): **Tónica (T)** da reposo (I, iii, vi); **Subdominante (S)** se aleja del
+reposo (ii, IV); **Dominante (D)** crea tensión que pide resolver (V, vii°). La secuencia típica es **T → S → D → T**,
+y es la regularidad que aprenderá la cadena de Markov de la pestaña 🎶 Armonía.""")
+
+    with st.expander("6️⃣ Ritmo y limitaciones de este proyecto"):
+        st.markdown("""
+El **pulso** es la unidad básica de tiempo y el **tempo** se mide en BPM (pulsos por minuto). Agrupar pulsos en
+**compases** crea acentos (4/4, 3/4...). En este proyecto todas las notas duran **una negra** y no hay compases:
+modelamos *qué* nota viene después, no *cuándo* ni *cuánto dura*. Añadir duraciones como parte del estado
+(altura × duración) es una extensión natural.""")
+
+    st.divider()
+    st.subheader("🔬 Laboratorio de escalas y acordes")
+    c1, c2, c3 = st.columns(3)
+    ton_lab = c1.selectbox("Tónica", NOMBRES, key="lab_ton")
+    esc_lab = c2.selectbox("Escala", list(te.ESCALAS), key="lab_esc")
+    bpm_lab = c3.slider("Tempo (BPM)", 60, 200, 120, key="lab_bpm")
+    tpc = NOMBRES.index(ton_lab)
+    offs = te.ESCALAS[esc_lab]
+    midis = [60 + tpc + o for o in offs] + [72 + tpc]
+    notas_esc = [midi_a_nombre(m) for m in midis]
+    st.success("  →  ".join(notas_esc))
+    pasos = [b - a for a, b in zip(offs, offs[1:] + [12])]
+    st.caption("Distancia en semitonos entre notas consecutivas: " + " · ".join(map(str, pasos))
+               + "  (2 = tono, 1 = semitono)")
+    if st.button("▶️ Escuchar la escala", key="lab_play"):
+        st.audio(audio.sintetizar(notas_esc, bpm_lab), format="audio/wav", autoplay=True)
+
+    modo_lab = st.radio("Acordes diatónicos de la tonalidad", ["mayor", "menor"], horizontal=True, key="lab_modo")
+    ac_lab = te.acordes_diatonicos(tpc, modo_lab)
+    st.dataframe(pd.DataFrame([{"Grado": a["grado"], "Acorde": a["romano"], "Nombre": a["nombre"],
+                                "Notas": " - ".join(a["notas"]), "Calidad": a["calidad"],
+                                "Función": a["funcion"]} for a in ac_lab.values()]).set_index("Grado"))
+    elegido = st.selectbox("🔊 Escuchar un acorde", list(ac_lab), key="lab_ac",
+                           format_func=lambda r: f"{r} · {ac_lab[r]['nombre']} ({ac_lab[r]['funcion']})")
+    if st.button("▶️ Tocar acorde", key="lab_ac_play"):
+        st.audio(audio.sintetizar_acordes([ac_lab[elegido]["midi"]], 60, 3), format="audio/wav", autoplay=True)
 
 # ============================================================ 3. PIANO
 with t_piano:
@@ -337,8 +464,8 @@ with t_gen:
         pcs = None
         if representacion == "notas":
             base = st.session_state.notas if len(st.session_state.notas) >= 4 else max(SECS_NOTAS, key=len)
-            ton, modo, r, pcs_det = mn.detectar_tonalidad(base)
-            usar_ton = st.checkbox(f"🎼 Restringir a la tonalidad detectada: {mn.nombre_tonalidad(ton, modo)} "
+            ton, modo, r, pcs_det = te.detectar_tonalidad(base)
+            usar_ton = st.checkbox(f"🎼 Restringir a la tonalidad detectada: {te.nombre_tonalidad(ton, modo)} "
                                    f"(r = {r:.2f})")
             pcs = pcs_det if usar_ton else None
 
@@ -371,6 +498,72 @@ with t_gen:
                       help="Qué tan probable es la melodía para el propio modelo (solo en modo notas).")
             st.altair_chart(piano_roll(g["notas"]))
             reproductor(g["wav"], g["midi"], "melodia_markov")
+
+# ============================================================ 5. ARMONÍA
+with t_arm:
+    st.header("Progresiones de acordes con Markov")
+    st.markdown("""
+Aquí los **estados** de la cadena no son notas sino **acordes** expresados como grados (I, IV, V, vi…).
+El modelo aprende, a partir de progresiones famosas, qué acordes suelen seguir a cuáles, y genera progresiones nuevas.
+Como son grados, funcionan en **cualquier tonalidad**.""")
+    c1, c2, c3 = st.columns(3)
+    ton_a = c1.selectbox("Tónica", NOMBRES, key="arm_ton")
+    modo_a = c2.radio("Modo", ["mayor", "menor"], horizontal=True, key="arm_modo")
+    orden_a = c3.slider("Orden de la cadena", 1, 3, 1, key="arm_ord",
+                        help="Con orden 2-3 el modelo recuerda los 2-3 acordes previos y copia más fielmente las progresiones.")
+    ac = te.acordes_diatonicos(NOMBRES.index(ton_a), modo_a)
+    numerales = list(ac)
+    disponibles = list(te.PROGRESIONES[modo_a])
+    sel_p = st.multiselect("Progresiones de entrenamiento", disponibles, default=disponibles, key=f"arm_sel_{modo_a}")
+
+    if not sel_p:
+        st.warning("Selecciona al menos una progresión.")
+    else:
+        secs_a = [te.PROGRESIONES[modo_a][k] for k in sel_p]
+        modelo_a = mk.ModeloMarkov(orden_a, alpha).entrenar(secs_a, vocab=numerales, clave=numerales.index)
+        st.caption(f"Entrenado con {len(secs_a)} progresiones y {sum(len(x) for x in secs_a)} acordes. "
+                   f"Usa el α de la barra lateral ({alpha}).")
+        d1, d2, d3, d4 = st.columns(4)
+        n_ac = d1.slider("Acordes a generar", 4, 32, 8, key="arm_n")
+        temp_a = d2.slider("Temperatura", 0.2, 2.0, 1.0, 0.1, key="arm_temp")
+        bpm_a = d3.slider("Tempo (BPM)", 50, 160, 90, key="arm_bpm")
+        sem_a = d4.number_input("Semilla (0 = aleatoria)", 0, 10**6, 0, key="arm_seed")
+
+        if st.button("✨ Generar progresión", type="primary", key="arm_btn"):
+            rng = np.random.default_rng(int(sem_a) or None)
+            gen = [numerales[0]] + modelo_a.generar([numerales[0]], n_ac - 1, temp_a, 0, None, rng)
+            st.session_state.arm_gen = dict(
+                romanos=gen, nombres=[ac[r]["nombre"] for r in gen], funciones=[ac[r]["funcion"] for r in gen],
+                tonalidad=f"{ton_a} {modo_a}",
+                wav=audio.sintetizar_acordes([ac[r]["midi"] for r in gen], bpm_a, 2))
+        g = st.session_state.get("arm_gen")
+        if g:
+            st.success(f"**{g['tonalidad']}:**  " + "  →  ".join(f"{n} ({r})" for n, r in zip(g["nombres"], g["romanos"])))
+            fun = pd.Series(g["funciones"]).value_counts()
+            st.caption("Funciones tonales usadas: " + " · ".join(f"{k}: {v}" for k, v in fun.items()))
+            st.audio(g["wav"], format="audio/wav")
+            st.download_button("⬇️ Descargar WAV", g["wav"], "progresion_markov.wav", "audio/wav", key="arm_dl")
+
+        st.subheader("Lo que aprendió: matriz de transición entre acordes")
+        Pa = mk.matriz_transicion(secs_a, numerales, alpha, numerales.index)
+        st.altair_chart(heatmap(Pa, "Acorde siguiente", "Acorde actual", "blues", ".2f", altura=300))
+        filas = []
+        for r in numerales:
+            j = Pa.loc[r].idxmax()
+            filas.append({"Desde": f"{r} · {ac[r]['nombre']}", "Función": ac[r]["funcion"],
+                          "Destino más probable": f"{j} · {ac[j]['nombre']}", "Probabilidad": f"{Pa.loc[r, j]:.0%}"})
+        st.dataframe(pd.DataFrame(filas).set_index("Desde"))
+        st.caption("Observa cómo el dominante (V) suele resolver a la tónica (I): el modelo redescubre la "
+                   "armonía funcional solo contando transiciones.")
+
+        umbral_a = st.slider("Mostrar transiciones con probabilidad ≥", 0.05, 0.6, 0.2, 0.05, key="arm_umb")
+        aristas = [f'"{a}" -> "{b}" [label="{Pa.loc[a, b]:.2f}", penwidth={1 + 4 * Pa.loc[a, b]:.2f}];'
+                   for a in numerales for b in numerales if Pa.loc[a, b] >= umbral_a]
+        if aristas:
+            st.graphviz_chart('digraph G { rankdir=LR; node [shape=circle, style=filled, fillcolor="#dbeafe", '
+                              'fontname="Helvetica"]; edge [fontsize=9]; ' + " ".join(aristas) + " }")
+        else:
+            st.info("Ninguna transición supera ese umbral. Bájalo.")
 
 # ============================================================ 5. ANÁLISIS
 with t_ana:
@@ -436,56 +629,6 @@ with t_ana:
         else:
             st.info("Escribe un contexto válido, por ejemplo `Do4 Re4`.")
 
-# ============================================================ 6. MINERÍA
-with t_min:
-    st.header("Minería de datos del corpus")
-    st.write("Se extraen rasgos de cada pieza y se analizan con **PCA**, **K-Means** y **similitud coseno**. "
-             "Los rasgos son invariantes a la transposición (relativos a la tónica detectada).")
-    todas = dict(CORPUS)
-    if len(st.session_state.notas) >= 4:
-        todas["★ Mi melodía"] = list(st.session_state.notas)
-    X = mn.tabla_caracteristicas(todas)
-
-    st.subheader("Tonalidad detectada (Krumhansl–Schmuckler)")
-    filas = []
-    for k, v in todas.items():
-        t, mo, r, _ = mn.detectar_tonalidad(v)
-        filas.append({"pieza": k, "tonalidad": mn.nombre_tonalidad(t, mo), "correlación": round(r, 3),
-                      "notas": len(v), "notas distintas": len(set(v))})
-    st.dataframe(pd.DataFrame(filas).set_index("pieza"))
-    st.caption("El método a veces confunde una tonalidad con su relativa (p. ej. Do mayor ↔ La menor) "
-               "porque comparten notas: es una limitación conocida del algoritmo.")
-
-    st.subheader("Perfil de intervalos")
-    iv_cols = [c for c in X.columns if c.startswith("int_")]
-    iv = X[iv_cols].copy()
-    iv.columns = [c.replace("int_", "") for c in iv_cols]
-    st.altair_chart(heatmap(iv, "Intervalo (semitonos)", "Pieza", "magma", ".2f", texto=False, altura=260))
-
-    st.subheader("PCA + K-Means")
-    k = st.slider("Número de clústeres (k)", 2, min(5, len(X) - 1), 3)
-    dfp, var, sil, sim = mn.analisis_estilo(X, k)
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Varianza explicada PC1", f"{var[0]:.0%}")
-    c2.metric("Varianza explicada PC2", f"{var[1]:.0%}")
-    c3.metric("Silueta", f"{sil:.2f}" if not np.isnan(sil) else "—",
-              help="Cerca de 1: clústeres bien separados. Cerca de 0: se traslapan. Negativa: mal asignados.")
-    pts = alt.Chart(dfp).mark_circle(size=200).encode(
-        x="PC1:Q", y="PC2:Q", color=alt.Color("cluster:N", title="Clúster"), tooltip=["pieza", "cluster"])
-    txt = alt.Chart(dfp).mark_text(dy=-14, fontSize=11).encode(x="PC1:Q", y="PC2:Q", text="pieza:N")
-    st.altair_chart((pts + txt).properties(width="container", height=420))
-
-    st.subheader("Similitud entre piezas")
-    st.altair_chart(heatmap(sim.round(2), "", "", "redyellowgreen", ".2f", texto=len(sim) <= 10, altura=380))
-    if "★ Mi melodía" in sim.index:
-        cerca = sim.loc["★ Mi melodía"].drop("★ Mi melodía").sort_values(ascending=False).head(3)
-        st.success("🎯 Tu melodía se parece más a: " + " · ".join(f"**{n}** ({v:.2f})" for n, v in cerca.items()))
-    else:
-        st.info("Toca 4+ notas en el piano para ver a qué pieza se parece tu melodía.")
-
-    with st.expander("Ver tabla completa de características"):
-        st.dataframe(X.round(3))
-
 # ============================================================ 7. EVALUACIÓN
 @st.cache_data(show_spinner="Evaluando modelos…")
 def _rejilla(items, representacion, modo, ordenes, alphas):
@@ -529,7 +672,7 @@ with t_eval:
             piv.index = [f"k={o}" for o in piv.index]
             piv.columns = [str(a) for a in piv.columns]
             st.subheader("Perplejidad por (orden, α)  — menor es mejor")
-            st.altair_chart(heatmap(piv, "α", "Orden", "yelloworangered_r", ".1f", altura=240))
+            st.altair_chart(heatmap(piv, "α", "Orden", "yelloworangered", ".1f", altura=240, invertir=True))
 
             st.subheader("Perplejidad vs. orden")
             sel_alpha = st.select_slider("α", options=list(alphas), value=float(mejor["alpha"]))

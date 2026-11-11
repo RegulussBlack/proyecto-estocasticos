@@ -1,7 +1,7 @@
 # 🎹 Compositor Estocástico con Cadenas de Markov
 
 Proyecto de Ciencia de Datos e IA: aprende el estilo de melodías con cadenas de Markov de orden *k*,
-genera música nueva y la analiza con minería de datos y métricas de ML.
+genera melodías y progresiones de acordes, y evalúa el modelo con métricas de ML.
 
 ## Ejecutar localmente
 ```bash
@@ -16,11 +16,11 @@ streamlit run app.py
 
 ## Estructura
 ```
-app.py              Interfaz (7 pestañas)
+app.py              Interfaz (8 pestañas)
 core/notas.py       Nomenclatura, MIDI, frecuencias
-core/audio.py       Síntesis aditiva, WAV y exportación MIDI
+core/audio.py       Síntesis aditiva (notas y acordes), WAV y exportación MIDI
 core/markov.py      Modelo orden k, suavizado jerárquico, muestreo, evaluación
-core/mineria.py     Tonalidad (Krumhansl-Schmuckler), rasgos, PCA, K-Means
+core/teoria.py      Escalas, intervalos, tonalidad (Krumhansl-Schmuckler), acordes, progresiones
 core/corpus.py      Melodías de entrenamiento
 ```
 

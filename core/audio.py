@@ -2,7 +2,7 @@
 import io
 import numpy as np
 import scipy.io.wavfile as wavfile
-from .notas import nombre_a_freq, nombre_a_midi
+from .notas import nombre_a_freq, nombre_a_midi, midi_a_freq
 
 SR = 44100
 ARMONICOS = [(1, 1.0), (2, 0.5), (3, 0.25), (4, 0.12), (5, 0.06)]
@@ -41,6 +41,23 @@ def sintetizar(notas, bpm: int = 100, solape: float = 1.6) -> bytes:
     buf = np.zeros(largo)
     for i, n in enumerate(notas):
         w = _nota(nombre_a_freq(n), paso * solape)
+        ini = int(i * paso * SR)
+        fin = min(ini + len(w), largo)
+        buf[ini:fin] += w[: fin - ini]
+    pico = np.max(np.abs(buf))
+    return _a_wav(buf / pico * 0.9 if pico > 0 else buf)
+
+
+def sintetizar_acordes(acordes, bpm: int = 90, pulsos: int = 2) -> bytes:
+    """acordes: lista de listas de números MIDI. Cada acorde dura `pulsos` negras."""
+    if not acordes:
+        return b""
+    paso = 60.0 / bpm * pulsos
+    dur = paso * 1.2
+    largo = int(SR * (paso * (len(acordes) - 1) + dur)) + 1
+    buf = np.zeros(largo)
+    for i, ch in enumerate(acordes):
+        w = sum(_nota(midi_a_freq(m), dur) for m in ch)
         ini = int(i * paso * SR)
         fin = min(ini + len(w), largo)
         buf[ini:fin] += w[: fin - ini]

@@ -42,8 +42,8 @@ class ModeloMarkov:
     def __init__(self, orden: int = 1, alpha: float = 0.5):
         self.orden, self.alpha = orden, alpha
 
-    def entrenar(self, secuencias, vocab=None):
-        self.vocab = sorted(vocab or {t for s in secuencias for t in s}, key=clave_orden)
+    def entrenar(self, secuencias, vocab=None, clave=None):
+        self.vocab = sorted(vocab or {t for s in secuencias for t in s}, key=clave or clave_orden)
         self.idx = {t: i for i, t in enumerate(self.vocab)}
         self.conteos = [defaultdict(Counter) for _ in range(self.orden + 1)]
         for s in secuencias:
@@ -136,8 +136,8 @@ def novedad(generada, secuencias_notas, n=4):
 
 
 # ---------------------------------------------------------------- análisis de la cadena
-def matriz_transicion(secuencias, vocab, alpha) -> pd.DataFrame:
-    m = ModeloMarkov(1, alpha).entrenar(secuencias, vocab)
+def matriz_transicion(secuencias, vocab, alpha, clave=None) -> pd.DataFrame:
+    m = ModeloMarkov(1, alpha).entrenar(secuencias, vocab, clave)
     P = np.vstack([m.dist([s]) for s in m.vocab])
     return pd.DataFrame(P, index=m.vocab, columns=m.vocab)
 
