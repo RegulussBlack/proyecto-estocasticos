@@ -1,152 +1,120 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Tue Nov 10 22:18:21 2026
-
-@author: Fabricio
-"""
-
 import streamlit as st
-from pianoroll_streamlit import pianoroll
 import numpy as np
+import io
+import scipy.io.wavfile as wavfile
 
 st.set_page_config(page_title="Compositor Markov", layout="wide")
 
-st.title("🎹 Compositor Estocástico con Cadenas de Markov")
-st.caption("Proyecto de Procesos Estocásticos y Series de Tiempo — Música Clásica")
+# ============================================================
+# FUNCIÓN PARA SINTETIZAR EL SONIDO DEL PIANO
+# ============================================================
+def generate_piano_tone(frequency, duration=1.5, sample_rate=44100):
+    """
+    Genera una onda de audio que simula una nota de piano.
+    Usa una onda fundamental + armónicos + decaimiento exponencial.
+    """
+    t = np.linspace(0, duration, int(sample_rate * duration), endpoint=False)
+    
+    # Onda compuesta (fundamental + armónicos para darle timbre)
+    wave = (1.0 * np.sin(2 * np.pi * frequency * t) +
+            0.5 * np.sin(2 * np.pi * frequency * 2 * t) +
+            0.2 * np.sin(2 * np.pi * frequency * 3 * t))
+    
+    # Envolvente exponencial (simula el decaimiento del piano)
+    envelope = np.exp(-4 * t)
+    wave = wave * envelope
+    
+    # Normalizar y convertir a 16-bit PCM
+    wave = wave / np.max(np.abs(wave))
+    wave_int16 = (wave * 32767).astype(np.int16)
+    
+    # Guardar en un buffer de memoria
+    buffer = io.BytesIO()
+    wavfile.write(buffer, sample_rate, wave_int16)
+    buffer.seek(0)
+    return buffer
 
-tab_teoria, tab_piano, tab_generacion, tab_metricas = st.tabs([
+# Diccionario de frecuencias (Notas de Do4 a Do5)
+NOTAS_FRECUENCIAS = {
+    "Do4": 261.63, "Do#4": 277.18, "Re4": 293.66, "Re#4": 311.13,
+    "Mi4": 329.63, "Fa4": 349.23, "Fa#4": 369.99, "Sol4": 392.00,
+    "Sol#4": 415.30, "La4": 440.00, "La#4": 466.16, "Si4": 493.88,
+    "Do5": 523.25
+}
+
+# ============================================================
+# GESTIÓN DE ESTADO (Para guardar las notas que tocas)
+# ============================================================
+if "notas_tocadas" not in st.session_state:
+    st.session_state.notas_tocadas = []
+
+# ============================================================
+# INTERFAZ PRINCIPAL
+# ============================================================
+st.title("🎹 Compositor Estocástico con Cadenas de Markov")
+st.caption("Proyecto de Procesos Estocásticos y Series de Tiempo")
+
+tab_teoria, tab_piano = st.tabs([
     "📚 Teoría: Cadenas de Markov",
-    "🎹 Piano interactivo",
-    "🎼 Generación (próximamente)",
-    "📊 Métricas (próximamente)"
+    "🎹 Piano interactivo"
 ])
 
-# ============================================================
-# PESTAÑA 1: TEORÍA
-# ============================================================
+# --- PESTAÑA 1: TEORÍA ---
 with tab_teoria:
     st.header("¿Qué es una Cadena de Markov?")
-
     st.markdown(r"""
-    Una **Cadena de Markov** es un proceso estocástico (una secuencia de variables
-    aleatorias) que cumple la **propiedad de Markov**:
+    Una **Cadena de Markov** es un proceso estocástico que cumple la **propiedad de Markov**:
+    > El futuro depende del presente **solo** a través del estado actual, no de la historia pasada.
 
-    > El futuro depende del presente **solo** a través del estado actual,
-    > no de la historia pasada.
-
-    Formalmente, si $X_0, X_1, X_2, \dots$ es una secuencia de estados, se cumple:
-
-    $$P(X_{t+1} = j \mid X_t = i, X_{t-1} = i_{t-1}, \dots, X_0 = i_0) = P(X_{t+1} = j \mid X_t = i)$$
-
-    Es decir, **"el futuro es independiente del pasado dado el presente"**.
+    Formalmente: $P(X_{t+1} = j \mid X_t = i, X_{t-1} = i_{t-1}, \dots) = P(X_{t+1} = j \mid X_t = i)$
     """)
-
-    st.subheader("Matriz de transición")
     st.markdown(r"""
-    Las probabilidades $P(X_{t+1} = j \mid X_t = i)$ se organizan en una
-    **matriz de transición** $P$, donde la entrada $P_{ij}$ es la probabilidad
-    de pasar del estado $i$ al estado $j$.
-
-    Cada fila **suma 1** (es una distribución de probabilidad):
-
-    $$\sum_{j} P_{ij} = 1 \quad \forall i$$
+    **Matriz de transición:** Las probabilidades $P_{ij}$ de pasar del estado $i$ al $j$. 
+    Se estiman contando transiciones y aplicando **suavizado de Laplace**:
+    $\hat{P}_{ij} = \frac{\text{count}(i \to j) + \alpha}{\sum_k \text{count}(i \to k) + \alpha \cdot |S|}$
     """)
+    st.info("👉 Ve a la pestaña **🎹 Piano interactivo** para tocar notas y ver el modelo en acción.")
 
-    st.subheader("Estimación desde datos")
-    st.markdown(r"""
-    En la práctica, no conocemos $P$. La **estimamos** contando las transiciones
-    observadas en una secuencia:
-
-    $$\hat{P}_{ij} = \frac{\text{número de veces que } i \to j}{\text{número de veces que salimos de } i}$$
-
-    Para evitar probabilidades cero en transiciones no vistas, se aplica el
-    **suavizado de Laplace**:
-
-    $$\hat{P}_{ij} = \frac{\text{count}(i \to j) + \alpha}{\sum_k \text{count}(i \to k) + \alpha \cdot |S|}$$
-
-    donde $\alpha > 0$ es un parámetro pequeño y $|S|$ es el número de estados posibles.
-    """)
-
-    st.subheader("Orden de la cadena")
-    st.markdown("""
-    - **Orden 1**: el siguiente estado depende solo de la nota actual.
-    - **Orden 2**: depende de las **dos** últimas notas (más contexto musical).
-    - **Orden $k$**: depende de las $k$ últimas notas.
-
-    A mayor orden, más "memoria" musical, pero también más datos necesarios
-    para estimar la matriz (más estados posibles).
-    """)
-
-    st.subheader("Cadena NO homogénea en el tiempo")
-    st.markdown("""
-    En este proyecto, la matriz **cambia mientras el usuario toca**:
-    cada nota nueva actualiza los conteos y, por tanto, la ley de transición.
-
-    Esto convierte el proceso en una **cadena de Markov no homogénea**,
-    porque $P$ depende del tiempo (del momento en que se estima). Es un punto
-    clave del proyecto y lo discutiremos en la defensa.
-    """)
-
-    st.subheader("¿Cómo se aplica a la música?")
-    st.markdown("""
-    - **Estado** = una nota (o acorde) que tocas en el piano.
-    - **Transición** = pasar de una nota a la siguiente.
-    - **Generación** = muestrear la siguiente nota desde $P(\cdot \mid \text{contexto})$.
-
-    Así, el modelo **aprende tu estilo** a partir de las notas que tocas y
-    propone una **continuación estocásticamente coherente** con lo que tocaste.
-    """)
-
-    st.info("👉 Cuando termines de leer, pasa a la pestaña **🎹 Piano interactivo**.")
-
-# ============================================================
-# PESTAÑA 2: PIANO INTERACTIVO
-# ============================================================
+# --- PESTAÑA 2: PIANO ---
 with tab_piano:
     st.header("Toca algunas notas")
-    st.markdown("""
-    Usa el piano de abajo (clic con el mouse). Las notas que toques serán la
-    **entrada** para estimar la matriz de transición de Markov.
+    st.write("Haz clic en las teclas para escuchar el sonido sintetizado. Las notas se guardarán para Markov.")
 
-    En el siguiente paso del proyecto, estas notas alimentarán el modelo
-    y generarán una continuación automática.
-    """)
-
-    notas = pianoroll()
-
-    if notas:
-        st.success(f"Notas capturadas: {notas}")
-        st.markdown("**Secuencia interpretada como estados de la cadena:**")
-        st.code(" → ".join(str(n) for n in notas))
+    # Mostrar las notas que se han tocado
+    if st.session_state.notas_tocadas:
+        st.success(f"Secuencia actual: {' → '.join(st.session_state.notas_tocadas)}")
+        if st.button("🗑️ Borrar secuencia"):
+            st.session_state.notas_tocadas = []
+            st.rerun()
     else:
         st.info("Aún no has tocado ninguna nota.")
 
-# ============================================================
-# PESTAÑA 3: GENERACIÓN (placeholder)
-# ============================================================
-with tab_generacion:
-    st.header("Generación con Markov (próximamente)")
-    st.markdown("""
-    Aquí aparecerá la **continuación generada** por la cadena de Markov
-    estimada a partir de tus notas.
+    # Renderizar el teclado (Dividido en columnas)
+    st.subheader("Teclado Musical (Do4 a Do5)")
+    
+    cols = st.columns(7) # 7 columnas para las teclas blancas
+    
+    # Teclas blancas
+    teclas_blancas = ["Do4", "Re4", "Mi4", "Fa4", "Sol4", "La4", "Si4"]
+    for i, nota in enumerate(teclas_blancas):
+        with cols[i]:
+            if st.button(f"🎹 {nota}", use_container_width=True):
+                st.session_state.notas_tocadas.append(nota)
+                freq = NOTAS_FRECUENCIAS[nota]
+                audio_buffer = generate_piano_tone(freq)
+                st.audio(audio_buffer, format="audio/wav")
 
-    El botón estará conectado a:
-    1. Estimación de la matriz de transición (con suavizado de Laplace).
-    2. Muestreo de la siguiente nota dado el contexto.
-    3. Reproducción de la melodía generada.
-    """)
-    st.button("🎵 Generar continuación (aún no implementado)", disabled=True)
+    # Teclas negras (Simuladas en una fila extra, un poco más pequeñas)
+    cols_negras = st.columns(7)
+    teclas_negras = ["", "Do#4", "Re#4", "", "Fa#4", "Sol#4", "La#4"]
+    for i, nota in enumerate(teclas_negras):
+        with cols_negras[i]:
+            if nota:
+                if st.button(f"🎵 {nota}", use_container_width=True):
+                    st.session_state.notas_tocadas.append(nota)
+                    freq = NOTAS_FRECUENCIAS[nota]
+                    audio_buffer = generate_piano_tone(freq)
+                    st.audio(audio_buffer, format="audio/wav")
 
-# ============================================================
-# PESTAÑA 4: MÉTRICAS (placeholder)
-# ============================================================
-with tab_metricas:
-    st.header("Métricas del modelo (próximamente)")
-    st.markdown("""
-    Aquí mostraremos:
-    - **Entropía** de la matriz de transición (medida de incertidumbre).
-    - **Número de estados únicos** vistos.
-    - **Número de transiciones** observadas.
-    - Evolución de la matriz mientras tocas (gráfico en vivo).
-    """)
-    st.button("📊 Ver métricas (aún no implementado)", disabled=True)
+    st.divider()
+    st.write("*(En el siguiente paso conectaremos esta secuencia con la matriz de Markov para generar la melodía).*")
